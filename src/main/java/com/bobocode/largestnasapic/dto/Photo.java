@@ -8,8 +8,8 @@ import lombok.Data;
 @Data
 public class Photo {
 
-  private int id;
-  private int sol;
+  private Integer id;
+  private Integer sol;
   @JsonProperty(value = "img_src")
   private String imgSrc;
 

@@ -1,10 +1,14 @@
 package com.bobocode.largestnasapic.service;
 
+import com.bobocode.largestnasapic.dto.NasaPictureRequest;
 import com.bobocode.largestnasapic.dto.Photo;
 import com.bobocode.largestnasapic.dto.PhotoWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.RandomStringUtils;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpHeaders;
@@ -20,24 +24,39 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpRequest.BodyPublishers;
 import java.util.AbstractMap;
 import java.util.AbstractMap.SimpleImmutableEntry;
+import java.util.Map;
 import java.util.Map.Entry;
+import java.util.NoSuchElementException;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static java.net.http.HttpResponse.BodyHandlers.ofByteArray;
 import static java.net.http.HttpResponse.BodyHandlers.ofString;
 
 @Service
 @Slf4j
+@RequiredArgsConstructor
 public class NasaService {
 
   @Value(value = "${nasa.url}")
   private String NASA_URL;
 
+  private Map<String, byte[]> photoStorage = new ConcurrentHashMap<>();
+
   private final ObjectMapper objectMapper = new ObjectMapper();
+
+  private final RabbitTemplate rabbitTemplate;
+
+  public String accept(NasaPictureRequest request) {
+    var commandId = RandomStringUtils.random(5);
+    request.setCommandId(commandId);
+    rabbitTemplate.convertAndSend("nasa-pictures-exchange", "", request);
+    return commandId;
+  }
 
   @SneakyThrows
   @Cacheable("max_pic")
-  public Optional<byte[]> getLargestPhoto(int sol, Optional<String> camera) {
+  public byte[] findLargestPhoto(int sol, Optional<String> camera) {
     var request = createRequest(sol, camera);
     var httpClient = HttpClient.newBuilder().followRedirects(Redirect.ALWAYS).build();
     log.info("Sending request to: {}", request.uri().toString());
@@ -46,7 +65,19 @@ public class NasaService {
     SimpleImmutableEntry<String, Long> res = findMaxPictureUrlToSize(httpClient, photoWrapper);
     log.info("Sending request to: {}", res.getKey());
     var maxPicture = httpClient.send(createRequest(URI.create(res.getKey())), ofByteArray());
-    return Optional.of(maxPicture.body());
+    return maxPicture.body();
+  }
+
+  public void addPhoto(String id, byte[] photo) {
+    photoStorage.put(id, photo);
+  }
+
+  public byte[] getPhotoById(String commandId) {
+    var pic = photoStorage.get(commandId);
+    if (pic == null) {
+      throw new NoSuchElementException("No picture found");
+    }
+      return pic;
   }
 
   private SimpleImmutableEntry<String, Long> findMaxPictureUrlToSize(HttpClient httpClient, PhotoWrapper photoWrapper) {
