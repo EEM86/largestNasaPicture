@@ -19,8 +19,8 @@ public class NasaController {
 
   private final NasaService nasaService;
 
-  @GetMapping(value = "/{sol}", produces = MediaType.IMAGE_PNG_VALUE)
-  public ResponseEntity<byte[]> getLargestPicture(@PathVariable Integer sol,
+  @GetMapping(produces = MediaType.IMAGE_PNG_VALUE)
+  public ResponseEntity<byte[]> getLargestPicture(@RequestParam Integer sol,
       @RequestParam(required = false) Optional<String> camera) {
     return ResponseEntity.ok(nasaService.getLargestPhoto(sol, camera).orElseThrow());
   }

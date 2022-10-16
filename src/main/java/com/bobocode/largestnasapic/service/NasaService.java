@@ -1,10 +1,14 @@
 package com.bobocode.largestnasapic.service;
 
+import com.bobocode.largestnasapic.NasaFeignClient;
 import com.bobocode.largestnasapic.dto.Photo;
 import com.bobocode.largestnasapic.dto.PhotoWrapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpHeaders;
@@ -33,6 +37,12 @@ public class NasaService {
   @Value(value = "${nasa.url}")
   private String NASA_URL;
 
+  @Value(value = "${nasa.api.key}")
+  private String API_KEY;
+
+  @Autowired
+  private NasaFeignClient nasaFeignClient;
+
   private final ObjectMapper objectMapper = new ObjectMapper();
 
   @SneakyThrows
@@ -41,8 +51,12 @@ public class NasaService {
     var request = createRequest(sol, camera);
     var httpClient = HttpClient.newBuilder().followRedirects(Redirect.ALWAYS).build();
     log.info("Sending request to: {}", request.uri().toString());
-    var response = httpClient.send(request, ofString());
-    var photoWrapper = objectMapper.readValue(response.body(), PhotoWrapper.class);
+    var response = nasaFeignClient.getLargestPicture(sol, API_KEY, camera);
+    final JsonNode photos = response.get("photos");
+    final ObjectMapper objectMapper = new ObjectMapper();
+    final PhotoWrapper photoWrapper = objectMapper.readValue(photos.asText(), PhotoWrapper.class);
+//    var response = httpClient.send(request, ofString());
+//    var photoWrapper = objectMapper.readValue(response.body(), PhotoWrapper.class);
     SimpleImmutableEntry<String, Long> res = findMaxPictureUrlToSize(httpClient, photoWrapper);
     log.info("Sending request to: {}", res.getKey());
     var maxPicture = httpClient.send(createRequest(URI.create(res.getKey())), ofByteArray());
@@ -77,6 +91,7 @@ public class NasaService {
   private HttpRequest createRequest(int sol, Optional<String> camera) {
     var uri = UriComponentsBuilder.fromHttpUrl(NASA_URL)
         .queryParam("sol", sol)
+        .queryParam("api_key", API_KEY)
         .queryParamIfPresent("camera", camera)
         .build().toUri();
 
